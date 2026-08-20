@@ -13,6 +13,7 @@ from downloader.any import *
 from downloader.animeOne import AnimeOne
 from downloader.anime1in import Anime1in
 from downloader.mmov import Mmov
+from downloader.tv777 import TV777
 
 def Get_Link_Type(link):
     if link.find("anime1.me")!=-1: #anime1 0(bad) 3(sn) 4(full)
@@ -35,6 +36,8 @@ def Get_Link_Type(link):
         return MovieFFM.Link_Validate(link)
     elif "yanetflix.com" in link: #yanetflix 0(bad) 19(sn) 20(full)
         return Yanetflix.Link_Validate(link)
+    elif "777tv." in link: #777tv 0(bad) 23(sn) 24(full)
+        return TV777.Link_Validate(link)
     elif link.find("ani.gamer"):
         return Baha.Link_Validate(link) #baha 0(bad) 2(full)
     else:
@@ -196,6 +199,19 @@ def run_download(link, TMP, downloadPath0, Quality, arg_start=None, arg_end=None
                 Anime1in.Download_Request(eps[i], TMP, downloadPath)
         except Exception as e:
             print("Error:", str(e))
+    elif linktype == 23:
+        TV777.Download_Request(link, TMP, downloadPath0)
+    elif linktype == 24:
+        try:
+            title, eps = TV777.Get_Title_Link(link)
+            if title is None or eps is None:
+                return
+            downloadPath = downloadPath0 + '/' + title + '/'
+            st, ed = ep_select(eps)
+            for i in range(st, ed):
+                TV777.Download_Request(eps[i], TMP, downloadPath)
+        except Exception as e:
+            print("Error:", str(e))
     elif linktype == 19:
         Yanetflix.Download_Request(link, TMP, downloadPath0)
     elif linktype == 20:
@@ -230,7 +246,7 @@ if __name__ == '__main__':
     if args.url:
         # One-shot mode: pre-set source selection on all modules that prompt for it
         cli_src = (args.source - 1) if args.source is not None else -1
-        for M in [Dramasq, Gimy, Yanetflix, MovieFFM, Hanju]:
+        for M in [Dramasq, Gimy, Yanetflix, MovieFFM, Hanju, TV777]:
             M._cli_source_idx = cli_src
         run_download(args.url, TMP, downloadPath0, Quality,
                      arg_start=args.start, arg_end=args.end, arg_all=args.all)
