@@ -23,10 +23,14 @@ class TV777:
         return href
 
     def _Extract_Sources(soup):
-        """Parse play/detail page → list of (source_name, [episode_urls]).
+        """Parse play/detail page → list of (source_name, [(label, url), ...]).
         Structure: div.stui-pannel > div.stui-pannel__head > h4.title
                                    > ul.stui-content__playlist > li > a
         Non-playlist panels (描述/猜你喜歡) use other ul classes and are skipped.
+
+        The entry label is 第NN集 for series but a quality/language variant for
+        movies (HD中字 / HD / 高清), and the entry count differs per 線路, so the
+        label is kept for display rather than assuming positional episodes.
         """
         sources = []
         for panel in soup.select('div.stui-pannel'):
@@ -35,10 +39,10 @@ class TV777:
             if not h4 or not ul:
                 continue
             name = h4.get_text(strip=True)
-            links = [TV777._abs_url(a['href']) for a in ul.find_all('a', href=True)
-                     if '/vod/play/' in a['href']]
-            if links:
-                sources.append((name, links))
+            entries = [(a.get_text(strip=True), TV777._abs_url(a['href']))
+                       for a in ul.find_all('a', href=True) if '/vod/play/' in a['href']]
+            if entries:
+                sources.append((name, entries))
         return sources
 
     def _Clean_Title(raw):
@@ -216,13 +220,15 @@ class TV777:
             if not sources:
                 print("No sources found")
                 return None, None
-            # Probe each 線路 with its own first episode
-            labels = [(name, urls[0]) for name, urls in sources]
-            idx = TV777._Prompt_Source(sources, TMP, labels)
+            # Entry counts differ per 線路, so show them alongside the name
+            display = [(f"{name} ({len(entries)}集)", entries) for name, entries in sources]
+            # Probe each 線路 with its own first entry
+            probes = [(name, entries[0][1]) for name, entries in sources]
+            idx = TV777._Prompt_Source(display, TMP, probes)
             if idx is None:
                 return None, None
             TV777._selected_source_idx = idx
-            return FileNameClean(title), sources[idx][1]
+            return FileNameClean(title), [u for _, u in sources[idx][1]]
 
         # Episode player page: /vod/play/id/{id}/sid/{sid}/nid/{nid}.html
         title = TV777._Clean_Title(title_tag.get_text())
@@ -244,22 +250,27 @@ class TV777:
             if not sources or not nid:
                 m3u8_url = TV777._Get_M3u8_Url(html)
             else:
+                # Prefer the same nid on every 線路, but entry counts differ
+                # (a movie's 2nd entry is a variant some 線路 don't carry), so
+                # fall back to the first entry instead of dropping the source.
                 choices = []
-                for name, urls in sources:
-                    ep_url = next((u for u in urls if re.search(rf'/nid/{nid}\.html$', u)), None)
-                    if ep_url:
-                        choices.append((name, ep_url))
-                if not choices:
+                for name, entries in sources:
+                    match = next((e for e in entries
+                                  if re.search(rf'/nid/{nid}\.html$', e[1])), None)
+                    if match:
+                        label, ep_url = match
+                    else:
+                        label, ep_url = entries[0]
+                        label += ' ※無對應項，改用第1項'
+                    choices.append((f"{name} - {label}", ep_url))
+                idx = TV777._Prompt_Source(choices, TMP, choices)
+                if idx is None:
+                    return None, None
+                picked_url = choices[idx][1]
+                if picked_url == site:
                     m3u8_url = TV777._Get_M3u8_Url(html)
                 else:
-                    idx = TV777._Prompt_Source(choices, TMP, choices)
-                    if idx is None:
-                        return None, None
-                    picked_url = choices[idx][1]
-                    if picked_url == site:
-                        m3u8_url = TV777._Get_M3u8_Url(html)
-                    else:
-                        m3u8_url = TV777._Get_M3u8_Url_From_Page(picked_url)
+                    m3u8_url = TV777._Get_M3u8_Url_From_Page(picked_url)
         else:
             # Batch mode: URL already points at the chosen 線路
             m3u8_url = TV777._Get_M3u8_Url(html)
